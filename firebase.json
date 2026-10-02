@@ -1,0 +1,16 @@
+{
+  "hosting": {
+    "site": "offerloop-ai",
+    "public": "infra/hosting",
+    "ignore": ["**/.*"],
+    "rewrites": [
+      {
+        "source": "**",
+        "run": {
+          "serviceId": "offerloop-ai",
+          "region": "asia-south1"
+        }
+      }
+    ]
+  }
+}

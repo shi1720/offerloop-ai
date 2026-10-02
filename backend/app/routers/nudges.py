@@ -1,0 +1,47 @@
+"""Nudge inbox."""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from ..auth import User, get_current_user
+from ..deps import get_repo
+from ..models import NudgeStatus, Profile
+from ..repos.base import Repo
+from ..services import engine
+
+router = APIRouter(prefix="/api/nudges", tags=["nudges"])
+
+
+@router.get("")
+def list_nudges(
+    status: str | None = None,
+    user: User = Depends(get_current_user),
+    repo: Repo = Depends(get_repo),
+):
+    # Nudges pointing at soft-deleted applications stay stored (a restore
+    # brings them right back) but never show in the inbox.
+    live_ids = {a.id for a in repo.list_applications(user.uid)}
+    return [n for n in repo.list_nudges(user.uid, status) if n.application_id in live_ids]
+
+
+@router.post("/{nudge_id}/done")
+def mark_done(nudge_id: str, user: User = Depends(get_current_user), repo: Repo = Depends(get_repo)):
+    result = _set_status(repo, user.uid, nudge_id, NudgeStatus.DONE)
+    profile = repo.get_profile(user.uid) or Profile(uid=user.uid, name=user.name)
+    engine.award(repo, profile, "nudge_done")
+    return result
+
+
+@router.post("/{nudge_id}/dismiss")
+def dismiss(nudge_id: str, user: User = Depends(get_current_user), repo: Repo = Depends(get_repo)):
+    return _set_status(repo, user.uid, nudge_id, NudgeStatus.DISMISSED)
+
+
+def _set_status(repo: Repo, uid: str, nudge_id: str, status: NudgeStatus):
+    nudge = repo.get_nudge(uid, nudge_id)
+    if nudge is None:
+        raise HTTPException(status_code=404, detail="Nudge not found")
+    nudge.status = status
+    repo.update_nudge(nudge)
+    return nudge
